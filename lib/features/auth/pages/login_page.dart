@@ -297,18 +297,13 @@ class _LoginPageState extends State<LoginPage> {
                         SizedBox(
                           width: double.infinity,
                           height: 52,
-
                           child: FilledButton(
                             onPressed: login,
-
                             child: const Row(
                               mainAxisAlignment: MainAxisAlignment.center,
-
                               children: [
                                 Icon(Icons.login, size: 20),
-
                                 SizedBox(width: 10),
-
                                 Text(
                                   'Masuk',
                                   style: TextStyle(
@@ -316,14 +311,17 @@ class _LoginPageState extends State<LoginPage> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-
-                                SizedBox(height: 12),
-
-                                GithubUpdateButton(),
                               ],
                             ),
                           ),
                         ),
+
+                        // ============================
+                        // TOMBOL UPDATE APLIKASI
+                        // ============================
+                        const SizedBox(height: 12),
+
+                        const GithubUpdateButton(),
                       ],
                     ),
                   ),
