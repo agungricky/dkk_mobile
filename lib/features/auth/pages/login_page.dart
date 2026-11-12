@@ -10,6 +10,7 @@ import '../../leader_cs/pages/leader_shell.dart';
 
 // PACKING
 import '../../packing/pages/packing_shell.dart';
+import '../widgets/github_update_button.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -315,6 +316,10 @@ class _LoginPageState extends State<LoginPage> {
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+
+                                SizedBox(height: 12),
+
+                                GithubUpdateButton(),
                               ],
                             ),
                           ),
