@@ -11,14 +11,25 @@ class GithubUpdateButton extends StatefulWidget {
       _GithubUpdateButtonState();
 }
 
-class _GithubUpdateButtonState
-    extends State<GithubUpdateButton> {
+class _GithubUpdateButtonState extends State<GithubUpdateButton> {
   static const githubOwner = 'dahadigitalkreasi';
   static const githubRepo = 'ddk_mobile';
 
   bool isChecking = false;
   bool isDownloading = false;
   double progress = 0;
+
+  // OTOMATIS CEK UPDATE SAAT HALAMAN DIBUKA
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      checkUpdate(automatic: true);
+    });
+  }
 
   void showMessage(String message) {
     if (!mounted) return;
@@ -31,14 +42,18 @@ class _GithubUpdateButtonState
     );
   }
 
-  Future<void> checkUpdate() async {
+  Future<void> checkUpdate({
+    bool automatic = false,
+  }) async {
     if (isChecking || isDownloading) return;
 
     if (githubOwner == 'NAMA_AKUN_GITHUB' ||
         githubRepo == 'NAMA_REPOSITORY') {
-      showMessage(
-        'Isi akun dan repository GitHub terlebih dahulu.',
-      );
+      if (!automatic) {
+        showMessage(
+          'Isi akun dan repository GitHub terlebih dahulu.',
+        );
+      }
       return;
     }
 
@@ -54,22 +69,27 @@ class _GithubUpdateButtonState
         assetPattern: RegExp(r'app-release\.apk$'),
       );
 
-      // Membandingkan versi terpasang dengan
-      // GitHub Release terbaru.
+      // CEK VERSI DI GITHUB RELEASES
       final release = await ota.checkForUpdate();
 
       if (!mounted) return;
 
+      // JIKA SUDAH TERBARU
       if (release == null) {
-        showMessage(
-          'Aplikasi sudah menggunakan versi terbaru.',
-        );
+        // OTOMATIS: TIDAK ADA POPUP
+        // MANUAL: TAMPILKAN PESAN
+        if (!automatic) {
+          showMessage(
+            'Aplikasi sudah menggunakan versi terbaru.',
+          );
+        }
         return;
       }
 
-      // TANYAKAN SEBELUM DOWNLOAD
+      // JIKA TERSEDIA VERSI BARU
       final shouldDownload = await showDialog<bool>(
         context: context,
+        barrierDismissible: false,
         builder: (dialogContext) {
           return AlertDialog(
             title: const Row(
@@ -88,22 +108,29 @@ class _GithubUpdateButtonState
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Versi terbaru: ${release.version}',
-                  style: const TextStyle(
+                const Text(
+                  'Versi terbaru DDK Mobile tersedia!',
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Download APK terbaru dari GitHub '
-                  'dan lanjutkan ke pemasangan Android?',
+                Text(
+                  'Versi terbaru: ${release.version}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.primary,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Data aplikasi yang sudah tersimpan '
-                  'biasanya tetap ada selama update '
-                  'berhasil dipasang tanpa uninstall.',
+                  'Silakan perbarui aplikasi untuk '
+                  'mendapatkan fitur dan perbaikan terbaru.',
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Data aplikasi biasanya tetap tersimpan '
+                  'selama update dilakukan tanpa uninstall.',
                   style: TextStyle(
                     color: Colors.black54,
                     fontSize: 12,
@@ -137,7 +164,7 @@ class _GithubUpdateButtonState
         progress = 0;
       });
 
-      // DOWNLOAD, VERIFIKASI, DAN BUKA INSTALLER
+      // DOWNLOAD DAN INSTAL APK
       await ota.downloadAndInstall(
         release,
         onProgress: (received, total) {
@@ -158,9 +185,15 @@ class _GithubUpdateButtonState
         );
       }
     } catch (error) {
-      showMessage(
-        'Gagal memeriksa atau mengunduh update: $error',
-      );
+      // JIKA CEK OTOMATIS GAGAL:
+      // JANGAN GANGGU PENGGUNA
+      if (!automatic) {
+        showMessage(
+          'Gagal memeriksa atau mengunduh update: $error',
+        );
+      }
+
+      debugPrint('GitHub update error: $error');
     } finally {
       if (mounted) {
         setState(() {
@@ -179,7 +212,9 @@ class _GithubUpdateButtonState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         OutlinedButton.icon(
-          onPressed: busy ? null : checkUpdate,
+          onPressed: busy
+              ? null
+              : () => checkUpdate(),
           icon: Icon(
             isDownloading
                 ? Icons.downloading
@@ -199,6 +234,7 @@ class _GithubUpdateButtonState
 
         if (busy) ...[
           const SizedBox(height: 12),
+
           LinearProgressIndicator(
             value: isDownloading && progress > 0
                 ? progress
@@ -206,7 +242,9 @@ class _GithubUpdateButtonState
             minHeight: 6,
             borderRadius: BorderRadius.circular(10),
           ),
+
           const SizedBox(height: 8),
+
           Text(
             isChecking
                 ? 'Menghubungi GitHub...'
