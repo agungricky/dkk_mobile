@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../../app/app_theme.dart';
 
-// CUSTOMER SERVICE
+// DASHBOARD
 import '../../cs/pages/cs_shell.dart';
-
-// LEADER CS
 import '../../leader_cs/pages/leader_shell.dart';
-
-// PACKING
 import '../../packing/pages/packing_shell.dart';
+
+// SERVICE LOGIN
+import '../services/auth_service.dart';
+
+// UPDATE APLIKASI
 import '../widgets/github_update_button.dart';
 
 class LoginPage extends StatefulWidget {
@@ -20,91 +22,195 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  // CONTROLLER LOGIN
-  final TextEditingController emailController = TextEditingController();
+  // CONTROLLER
+  final usernameController = TextEditingController();
+  final passwordController = TextEditingController();
 
-  final TextEditingController passwordController = TextEditingController();
+  // SERVICE
+  final AuthService authService = AuthService();
+  final FlutterSecureStorage secureStorage =
+      const FlutterSecureStorage();
 
-  // VISIBILITAS PASSWORD
   bool obscurePassword = true;
-
-  // ROLE SEMENTARA UNTUK PENGUJIAN UI
-  String selectedRole = 'cs';
+  bool isLoading = false;
 
   @override
   void dispose() {
-    emailController.dispose();
+    usernameController.dispose();
     passwordController.dispose();
     super.dispose();
   }
 
-  // FUNGSI LOGIN
-  void login() {
-    final email = emailController.text.trim();
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  bool isLeader(dynamic value) {
+    return value == true ||
+        value == 1 ||
+        value?.toString().toLowerCase() == 'true' ||
+        value?.toString() == '1';
+  }
+
+  Widget? getDashboard(
+    String role,
+    bool leader,
+  ) {
+    switch (role.toLowerCase()) {
+      case 'pegawai':
+      case 'cs':
+        return leader
+            ? const LeaderShell()
+            : const CsShell();
+
+      case 'leader_cs':
+        return const LeaderShell();
+
+      case 'packing':
+        return const PackingShell();
+
+      default:
+        return null;
+    }
+  }
+
+  // LOGIN KE LARAVEL API
+  Future<void> login() async {
+    if (isLoading) return;
+
+    final username = usernameController.text.trim();
     final password = passwordController.text;
 
-    // VALIDASI INPUT
-    if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Email dan password wajib diisi'),
-          behavior: SnackBarBehavior.floating,
-        ),
+    if (username.isEmpty || password.isEmpty) {
+      showMessage(
+        'Username dan password wajib diisi.',
       );
       return;
     }
 
-    // MENENTUKAN HALAMAN BERDASARKAN ROLE
-    Widget dashboard;
+    setState(() {
+      isLoading = true;
+    });
 
-    switch (selectedRole) {
-      // CUSTOMER SERVICE
-      case 'cs':
-        dashboard = const CsShell();
-        break;
+    try {
+      final result = await authService.login(
+        username: username,
+        password: password,
+      );
 
-      // LEADER CS
-      case 'leader_cs':
-        dashboard = const LeaderShell();
-        break;
+      if (!mounted) return;
 
-      // PACKING
-      case 'packing':
-        dashboard = const PackingShell();
-        break;
+      if (result['status'] != 'success') {
+        showMessage(
+          result['message']?.toString() ??
+              'Login gagal.',
+        );
+        return;
+      }
 
-      default:
-        dashboard = const CsShell();
-        break;
+      final token = result['token']?.toString();
+
+      if (token == null || token.isEmpty) {
+        showMessage(
+          'Token tidak ditemukan pada response API.',
+        );
+        return;
+      }
+
+      final user = Map<String, dynamic>.from(
+        result['user'] as Map,
+      );
+
+      final role = user['role']?.toString() ?? '';
+      final leader = isLeader(user['leader']);
+
+      final dashboard = getDashboard(role, leader);
+
+      if (dashboard == null) {
+        showMessage(
+          'Role $role belum memiliki dashboard '
+          'di DDK Mobile.',
+        );
+        return;
+      }
+
+      // SIMPAN TOKEN DAN DATA USER
+      await secureStorage.write(
+        key: 'auth_token',
+        value: token,
+      );
+
+      await secureStorage.write(
+        key: 'user_id',
+        value: user['id'].toString(),
+      );
+
+      await secureStorage.write(
+        key: 'username',
+        value: user['name'].toString(),
+      );
+
+      await secureStorage.write(
+        key: 'user_role',
+        value: role,
+      );
+
+      await secureStorage.write(
+        key: 'user_leader',
+        value: leader.toString(),
+      );
+
+      if (!mounted) return;
+
+      // MASUK DASHBOARD SESUAI ROLE
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => dashboard,
+        ),
+      );
+    } catch (error) {
+      showMessage(
+        error.toString().replaceFirst(
+          'Exception: ',
+          '',
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
-
-    // PINDAH KE HALAMAN DASHBOARD
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => dashboard),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F6FA),
-
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 28,
+            ),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-
+              constraints: const BoxConstraints(
+                maxWidth: 420,
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // ============================
-                  // LOGO DAHA DIGITAL KREASI
-                  // ============================
-
+                  // LOGO
                   ClipRRect(
                     borderRadius: BorderRadius.circular(26),
                     child: Image.asset(
@@ -117,7 +223,6 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 20),
 
-                  // NAMA APLIKASI
                   const Text(
                     'Daha Digital Kreasi',
                     textAlign: TextAlign.center,
@@ -133,30 +238,31 @@ class _LoginPageState extends State<LoginPage> {
                   const Text(
                     'Masuk ke sistem operasional',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.black54, fontSize: 14),
+                    style: TextStyle(
+                      color: Colors.black54,
+                      fontSize: 14,
+                    ),
                   ),
 
                   const SizedBox(height: 32),
 
-                  // ============================
                   // FORM LOGIN
-                  // ============================
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(20),
-
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFE5EBF2)),
+                      border: Border.all(
+                        color: const Color(0xFFE5EBF2),
+                      ),
                     ),
-
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      crossAxisAlignment:
+                          CrossAxisAlignment.stretch,
                       children: [
-                        // JUDUL FORM
                         const Text(
-                          'Login Karyawan',
+                          'Halaman Login',
                           style: TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.bold,
@@ -167,160 +273,101 @@ class _LoginPageState extends State<LoginPage> {
                         const SizedBox(height: 6),
 
                         const Text(
-                          'Masukkan informasi akun untuk melanjutkan.',
-                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                          'Masukkan username dan password '
+                          'akun karyawan.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.black54,
+                          ),
                         ),
 
                         const SizedBox(height: 22),
 
-                        // ============================
-                        // INPUT EMAIL
-                        // ============================
+                        // USERNAME
                         TextField(
-                          controller: emailController,
-
-                          keyboardType: TextInputType.emailAddress,
-
+                          controller: usernameController,
+                          enabled: !isLoading,
                           textInputAction: TextInputAction.next,
-
                           decoration: const InputDecoration(
-                            labelText: 'Email',
-                            hintText: 'nama@perusahaan.com',
-                            prefixIcon: Icon(Icons.email_outlined),
+                            labelText: 'Username',
+                            hintText: 'Masukkan username',
+                            prefixIcon: Icon(
+                              Icons.person_outline,
+                            ),
                           ),
                         ),
 
                         const SizedBox(height: 16),
 
-                        // ============================
-                        // INPUT PASSWORD
-                        // ============================
+                        // PASSWORD
                         TextField(
                           controller: passwordController,
-
+                          enabled: !isLoading,
                           obscureText: obscurePassword,
-
                           textInputAction: TextInputAction.done,
-
                           onSubmitted: (_) => login(),
-
                           decoration: InputDecoration(
                             labelText: 'Password',
-
-                            prefixIcon: const Icon(Icons.lock_outline),
-
+                            prefixIcon: const Icon(
+                              Icons.lock_outline,
+                            ),
                             suffixIcon: IconButton(
                               tooltip: obscurePassword
                                   ? 'Tampilkan password'
                                   : 'Sembunyikan password',
-
                               icon: Icon(
                                 obscurePassword
                                     ? Icons.visibility_off_outlined
                                     : Icons.visibility_outlined,
                               ),
-
                               onPressed: () {
                                 setState(() {
-                                  obscurePassword = !obscurePassword;
+                                  obscurePassword =
+                                      !obscurePassword;
                                 });
                               },
                             ),
                           ),
                         ),
 
-                        const SizedBox(height: 22),
-
-                        // ============================
-                        // PILIH ROLE DEMO
-                        // ============================
-                        const Text(
-                          'Role Pengujian',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.navy,
-                          ),
-                        ),
-
-                        const SizedBox(height: 9),
-
-                        DropdownButtonFormField<String>(
-                          initialValue: selectedRole,
-
-                          isExpanded: true,
-
-                          decoration: const InputDecoration(
-                            prefixIcon: Icon(
-                              Icons.admin_panel_settings_outlined,
-                            ),
-                          ),
-
-                          items: const [
-                            DropdownMenuItem<String>(
-                              value: 'cs',
-                              child: Text('Customer Service'),
-                            ),
-
-                            DropdownMenuItem<String>(
-                              value: 'leader_cs',
-                              child: Text('Leader CS'),
-                            ),
-
-                            DropdownMenuItem<String>(
-                              value: 'packing',
-                              child: Text('Packing'),
-                            ),
-                          ],
-
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() {
-                                selectedRole = value;
-                              });
-                            }
-                          },
-                        ),
-
-                        const SizedBox(height: 8),
-
-                        const Text(
-                          'Pilihan role hanya untuk pengujian tampilan.',
-                          style: TextStyle(fontSize: 11, color: Colors.black45),
-                        ),
-
                         const SizedBox(height: 24),
 
-                        // ============================
-                        // TOMBOL MASUK
-                        // ============================
+                        // TOMBOL LOGIN
                         SizedBox(
                           width: double.infinity,
                           height: 52,
                           child: FilledButton(
-                            onPressed: login,
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.login, size: 20),
-                                SizedBox(width: 10),
-                                Text(
-                                  'Masuk',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
+                            onPressed: isLoading ? null : login,
+                            child: isLoading
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.login, size: 20),
+                                      SizedBox(width: 10),
+                                      Text(
+                                        'Masuk',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight:
+                                              FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              ],
-                            ),
                           ),
                         ),
 
-                        // ============================
-                        // TOMBOL UPDATE APLIKASI
-                        // ============================
+                        // TOMBOL UPDATE
                         const SizedBox(height: 12),
-
                         const GithubUpdateButton(),
                       ],
                     ),
@@ -328,13 +375,13 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 24),
 
-                  // ============================
-                  // FOOTER
-                  // ============================
                   const Text(
                     '© PT Daha Digital Kreasi',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: Colors.black45),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.black45,
+                    ),
                   ),
 
                   const SizedBox(height: 5),
@@ -342,7 +389,10 @@ class _LoginPageState extends State<LoginPage> {
                   const Text(
                     'Sistem Operasional Internal',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11, color: Colors.black38),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.black38,
+                    ),
                   ),
                 ],
               ),

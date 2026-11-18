@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import '../../../app/app_theme.dart';
 import '../../auth/pages/login_page.dart';
 import 'packing_dashboard_page.dart';
-import 'packing_profile_page.dart';
+import '../../profile/pages/profile_page.dart';
 import 'packing_photo_page.dart';
 import 'packing_scan_page.dart';
 import 'packing_history_page.dart';
+import '../../auth/services/auth_service.dart';
+import '../../chat/pages/chat_list_page.dart';
+import '../../chat/pages/chat_create_page.dart';
 
 class PackingShell extends StatefulWidget {
   const PackingShell({super.key});
@@ -24,12 +27,60 @@ class _PackingShellState extends State<PackingShell> {
     });
   }
 
-  void logout() {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (route) => false,
+  Future<void> openCreateChat() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<bool>(
+        builder: (_) => const ChatCreatePage(),
+      ),
     );
+    // Memuat ulang daftar chat dengan memasang ulang tab Chat.
+    if (!mounted) return;
+    setState(() => chatRefreshKey++);
+  }
+
+  int chatRefreshKey = 0;
+
+  bool isLoggingOut = false;
+
+  Future<void> logout() async {
+    if (isLoggingOut) return;
+
+    setState(() {
+      isLoggingOut = true;
+    });
+
+    try {
+      // Logout melalui API Laravel
+      await AuthService().logout();
+
+      if (!mounted) return;
+
+      // Kembali ke halaman Login
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const LoginPage(),
+        ),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoggingOut = false;
+        });
+      }
+    }
   }
 
   @override
@@ -50,14 +101,26 @@ class _PackingShellState extends State<PackingShell> {
       // 3 - RIWAYAT
       const PackingHistoryPage(),
 
-      // 4 - PROFIL PACKING
-      PackingProfilePage(onLogout: logout),
+      // 4 - CHAT KLARIFIKASI
+      ChatListPage(key: ValueKey(chatRefreshKey)),
+
+      // 5 - PROFIL PACKING
+      ProfilePage(onLogout: logout),
     ];
 
     return Scaffold(
       backgroundColor: AppTheme.background,
 
       body: IndexedStack(index: selectedIndex, children: pages),
+
+      // Packing dapat memulai chat hanya ketika tab Chat aktif.
+      floatingActionButton: selectedIndex == 4
+          ? FloatingActionButton.extended(
+              onPressed: openCreateChat,
+              icon: const Icon(Icons.add_comment_outlined),
+              label: const Text('Buat Chat'),
+            )
+          : null,
 
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: selectedIndex,
@@ -90,6 +153,11 @@ class _PackingShellState extends State<PackingShell> {
             icon: Icon(Icons.history_outlined),
             activeIcon: Icon(Icons.history),
             label: 'Riwayat',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.chat_bubble_outline),
+            activeIcon: Icon(Icons.chat_bubble),
+            label: 'Chat',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

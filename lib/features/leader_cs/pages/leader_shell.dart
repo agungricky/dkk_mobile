@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/app_theme.dart';
 import '../../auth/pages/login_page.dart';
+import '../../auth/services/auth_service.dart';
 
 // FORM TAMBAH PESANAN BERSAMA
 import '../../cs/pages/cs_add_order_page.dart';
@@ -10,7 +11,7 @@ import '../../cs/pages/cs_add_order_page.dart';
 import 'leader_dashboard_page.dart';
 import 'leader_orders_page.dart';
 import 'leader_performance_page.dart';
-import 'leader_profile_page.dart';
+import '../../profile/pages/profile_page.dart';
 
 class LeaderShell extends StatefulWidget {
   const LeaderShell({super.key});
@@ -50,12 +51,47 @@ class _LeaderShellState extends State<LeaderShell> {
   }
 
   // LOGOUT
-  void logout() {
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
-      (route) => false,
-    );
+  bool isLoggingOut = false;
+
+  Future<void> logout() async {
+    if (isLoggingOut) return;
+
+    setState(() {
+      isLoggingOut = true;
+    });
+
+    try {
+      // Logout melalui API Laravel
+      await AuthService().logout();
+
+      if (!mounted) return;
+
+      // Kembali ke halaman login
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const LoginPage(),
+        ),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoggingOut = false;
+        });
+      }
+    }
   }
 
   @override
@@ -74,7 +110,7 @@ class _LeaderShellState extends State<LeaderShell> {
       const LeaderPerformancePage(),
 
       // 3. PROFIL LEADER
-      LeaderProfilePage(onLogout: logout),
+      ProfilePage(onLogout: logout),
     ];
 
     return Scaffold(
