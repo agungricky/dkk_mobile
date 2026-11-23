@@ -15,18 +15,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # AMBIL SOURCE CODE
+      # ================================
+      # 1. AMBIL SOURCE CODE
+      # ================================
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # JAVA UNTUK BUILD ANDROID
+      # ================================
+      # 2. SETUP JAVA
+      # ================================
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # INSTALL FLUTTER
+      # ================================
+      # 3. SETUP FLUTTER
+      # ================================
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -34,11 +40,15 @@ jobs:
           channel: stable
           cache: true
 
-      # DEPENDENCY
+      # ================================
+      # 4. INSTALL DEPENDENCIES
+      # ================================
       - name: Install Dependencies
         run: flutter pub get
 
-      # CEK VERSI TAG DAN PUBSPEC
+      # ================================
+      # 5. VERIFIKASI VERSI RELEASE
+      # ================================
       - name: Verify Release Version
         shell: bash
         run: |
@@ -47,25 +57,44 @@ jobs:
             | cut -d'+' -f1)
 
           if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
-            echo "Versi pubspec.yaml tidak sesuai tag."
+            echo "ERROR: Versi pubspec.yaml tidak sesuai tag."
             echo "Pubspec: $VERSION"
             echo "Tag: $GITHUB_REF_NAME"
             exit 1
           fi
 
-      # PULIHKAN KEYSTORE DARI GITHUB SECRETS
+          echo "Versi release valid: $VERSION"
+
+      # ================================
+      # 6. RESTORE ANDROID SIGNING
+      # ================================
       - name: Restore Android Signing
         shell: bash
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          test -n "$KEYSTORE_BASE64"
-          test -n "$STORE_PASSWORD"
-          test -n "$KEY_PASSWORD"
-          test -n "$KEY_ALIAS"
+          test -n "$KEYSTORE_BASE64" || {
+            echo "ERROR: KEYSTORE_BASE64 belum tersedia"
+            exit 1
+          }
+
+          test -n "$STORE_PASSWORD" || {
+            echo "ERROR: STORE_PASSWORD belum tersedia"
+            exit 1
+          }
+
+          test -n "$KEY_PASSWORD" || {
+            echo "ERROR: KEY_PASSWORD belum tersedia"
+            exit 1
+          }
+
+          test -n "$KEY_ALIAS" || {
+            echo "ERROR: KEY_ALIAS belum tersedia"
+            exit 1
+          }
 
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > android/app/upload-keystore.jks
@@ -77,28 +106,56 @@ jobs:
             echo "storeFile=upload-keystore.jks"
           } > android/key.properties
 
-      # PERIKSA KODE
+          echo "Android signing berhasil disiapkan."
+
+      # ================================
+      # 7. PERIKSA KODE FLUTTER
+      # ================================
       - name: Flutter Analyze
         run: flutter analyze
 
-      # BUILD APK RELEASE
+      # ================================
+      # 8. BUILD APK RELEASE
+      # ================================
       - name: Build Android APK
-        run: >-
-          flutter build apk --release
-          --dart-define=API_BASE_URL=https://sandbox.dahakreasidigital.my.id/api
+        shell: bash
+        env:
+          REVERB_WS_URL: ${{ vars.REVERB_WS_URL }}
+          REVERB_APP_KEY: ${{ secrets.REVERB_APP_KEY }}
+        run: |
+          ARGS=(
+            --release
+            --dart-define=API_BASE_URL=https://sandbox.dahakreasidigital.my.id/api
+          )
 
-      # SIMPAN ARTIFACT BUILD
+          if [ -n "$REVERB_WS_URL" ] && [ -n "$REVERB_APP_KEY" ]; then
+            ARGS+=(
+              "--dart-define=REVERB_WS_URL=$REVERB_WS_URL"
+              "--dart-define=REVERB_APP_KEY=$REVERB_APP_KEY"
+            )
+          else
+            echo "Reverb belum dikonfigurasi untuk build ini."
+          fi
+
+          flutter build apk "${ARGS[@]}"
+
+      # ================================
+      # 9. UPLOAD APK ARTIFACT
+      # ================================
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: DahaDigitalKreasi-APK
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
 
-      # PUBLIKASIKAN KE GITHUB RELEASES
+      # ================================
+      # 10. PUBLIKASIKAN RELEASE
+      # ================================
       - name: Publish GitHub Release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: bash
         run: |
           gh release create "$GITHUB_REF_NAME" \
             build/app/outputs/flutter-apk/app-release.apk \
