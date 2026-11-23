@@ -83,7 +83,9 @@ jobs:
 
       # BUILD APK RELEASE
       - name: Build Android APK
-        run: flutter build apk --release
+        run: >-
+          flutter build apk --release
+          --dart-define=API_BASE_URL=https://sandbox.dahakreasidigital.my.id/api
 
       # SIMPAN ARTIFACT BUILD
       - name: Upload APK Artifact
